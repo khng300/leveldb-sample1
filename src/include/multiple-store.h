@@ -30,6 +30,7 @@ class MultiDB {
   MultiDB();
   virtual ~MultiDB();
 
+  // Zero-length key is not allowed in MultiDB.
   Status Put(const WriteOptions& options,
              DbID dbid,
              const Slice& key,
@@ -56,28 +57,30 @@ class MultiDB {
 };
 
 class WriteBatch {
-public:
- // Store the mapping "key->value" in the database.
- void Put(DbID dbid, const Slice& key, const Slice& value);
+ public:
+  // Store the mapping "key->value" in the database.
+  // Zero-length key is not allowed in MultiDB.
+  void Put(DbID dbid, const Slice& key, const Slice& value);
 
- // If the database contains a mapping for "key", erase it.  Else do nothing.
- void Delete(DbID dbid, const Slice& key);
+  // If the database contains a mapping for "key", erase it.  Else do nothing.
+  void Delete(DbID dbid, const Slice& key);
 
- void Clear();
+  void Clear();
 
- // Support for iterating over the contents of a batch.
- class Handler {
-  public:
-   virtual ~Handler();
-   virtual void Put(DbID dbid, const Slice& key, const Slice& value) = 0;
-   virtual void Delete(DbID dbid, const Slice& key) = 0;
- };
- Status Iterate(Handler* handler) const;
+  // Support for iterating over the contents of a batch.
+  class Handler {
+   public:
+    virtual ~Handler();
+    virtual void Put(DbID dbid, const Slice& key, const Slice& value) = 0;
+    virtual void Delete(DbID dbid, const Slice& key) = 0;
+  };
+  Status Iterate(Handler* handler) const;
 
-private:
- friend Status MultiDB::Write(const WriteOptions& options, WriteBatch* updates);
+ private:
+  friend Status MultiDB::Write(const WriteOptions& options,
+                               WriteBatch* updates);
 
- leveldb::WriteBatch base_write_batch;
+  leveldb::WriteBatch base_write_batch;
 };
 
 class Iterator {

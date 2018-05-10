@@ -3,53 +3,68 @@
 namespace multiplestore {
 
 class RawKeyBuffer {
+  struct Header {
+    // DbID field
+    uint8_t db_id[sizeof(DbID)];
+  };
   std::string buffer;
 
  public:
-  RawKeyBuffer() { buffer.resize(sizeof(DbID)); }
+  RawKeyBuffer() { buffer.resize(sizeof(Header)); }
+
   RawKeyBuffer(DbID dbid, const Slice& slice) : RawKeyBuffer() {
     SetDbID(dbid);
     SetData(slice);
   }
+
   RawKeyBuffer(const Slice& raw_key) { buffer = raw_key.ToString(); }
 
   DbID GetDbID() {
-    return (((uint64_t)(buffer[0]) << 56) | ((uint64_t)(buffer[1]) << 48) |
-            ((uint64_t)(buffer[2]) << 40) | ((uint64_t)(buffer[3]) << 32) |
-            ((uint64_t)(buffer[4]) << 24) | ((uint64_t)(buffer[5]) << 16) |
-            ((uint64_t)(buffer[6]) << 8) | buffer[7]);
+    const Header* key_header = reinterpret_cast<const Header*>(&buffer[0]);
+    return (((DbID)(key_header->db_id[0]) << 56) |
+            ((DbID)(key_header->db_id[1]) << 48) |
+            ((DbID)(key_header->db_id[2]) << 40) |
+            ((DbID)(key_header->db_id[3]) << 32) |
+            ((DbID)(key_header->db_id[4]) << 24) |
+            ((DbID)(key_header->db_id[5]) << 16) |
+            ((DbID)(key_header->db_id[6]) << 8) | key_header->db_id[7]);
   }
 
   void SetDbID(DbID dbid) {
-    buffer[0] = dbid >> 56;
-    buffer[1] = dbid >> 48;
-    buffer[2] = dbid >> 40;
-    buffer[3] = dbid >> 32;
-    buffer[4] = dbid >> 24;
-    buffer[5] = dbid >> 16;
-    buffer[6] = dbid >> 8;
-    buffer[7] = dbid;
+    Header* key_header = reinterpret_cast<Header*>(&buffer[0]);
+    key_header->db_id[0] = dbid >> 56;
+    key_header->db_id[1] = dbid >> 48;
+    key_header->db_id[2] = dbid >> 40;
+    key_header->db_id[3] = dbid >> 32;
+    key_header->db_id[4] = dbid >> 24;
+    key_header->db_id[5] = dbid >> 16;
+    key_header->db_id[6] = dbid >> 8;
+    key_header->db_id[7] = dbid;
   }
 
   Slice GetRawKey() { return Slice(buffer.data(), buffer.size()); }
-  size_t GetSize() { return buffer.size() - sizeof(DbID); }
+  size_t GetSize() { return buffer.size() - sizeof(Header); }
 
-  Slice GetData() { return Slice(buffer.data() + sizeof(DbID), GetSize()); }
+  Slice GetData() {
+    if (!GetSize())
+      return Slice();
+    return Slice(buffer.data() + sizeof(Header), GetSize());
+  }
 
   void SetData(const std::string& data) {
-    buffer.resize(sizeof(DbID));
+    buffer.resize(sizeof(Header));
     buffer.append(data);
   }
 
   void SetData(const Slice& slice) {
-    buffer.resize(sizeof(DbID) + slice.size());
+    buffer.resize(sizeof(Header) + slice.size());
     if (!slice.empty())
-      memcpy(&buffer[sizeof(DbID)], slice.data(), slice.size());
+      memcpy(&buffer[sizeof(Header)], slice.data(), slice.size());
   }
 
   void SetData(const void* data, size_t size) {
-    buffer.resize(sizeof(DbID) + size);
-    memcpy(&buffer[sizeof(DbID)], data, size);
+    buffer.resize(sizeof(Header) + size);
+    memcpy(&buffer[sizeof(Header)], data, size);
   }
 };
 
@@ -182,10 +197,15 @@ class InternalComparator : public leveldb::Comparator {
       return -1;
     if (raw_key_a.GetDbID() > raw_key_b.GetDbID())
       return 1;
+    if (!raw_key_a.GetSize())
+      return -1;
+    if (!raw_key_b.GetSize())
+      return 1;
     auto comparator = comparators_map.find(raw_key_a.GetDbID());
     if (comparator == comparators_map.end())
       return raw_key_a.GetData().compare(raw_key_b.GetData());
-    return comparator->second->Compare(raw_key_a.GetData(), raw_key_b.GetData());
+    return comparator->second->Compare(raw_key_a.GetData(),
+                                       raw_key_b.GetData());
   };
 
   const char* Name() const { return "MultiDB"; };
