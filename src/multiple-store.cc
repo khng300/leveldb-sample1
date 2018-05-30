@@ -111,20 +111,32 @@ void Iterator::SeekToFirst() {
 }
 
 void Iterator::SeekToLast() {
-  RawKeyBuffer raw_key(dbid + 1, {});
   valid = false;
 
-  base_iter->Seek(raw_key.GetRawKey());
-  if (base_iter->Valid()) {
-    base_iter->Prev();
+  if (dbid != (DbID)-1) {
+    RawKeyBuffer raw_key(dbid + 1, {});
+
+    base_iter->Seek(raw_key.GetRawKey());
+    if (base_iter->Valid()) {
+      base_iter->Prev();
+      if (!base_iter->Valid())
+        return;
+    } else
+      return;
+
+    raw_key = RawKeyBuffer(base_iter->key());
+    if (raw_key.GetDbID() != dbid)
+      return;
+  } else {
+    base_iter->SeekToLast();
     if (!base_iter->Valid())
       return;
-  } else
-    return;
 
-  raw_key = RawKeyBuffer(base_iter->key());
-  if (raw_key.GetDbID() != dbid)
-    return;
+    RawKeyBuffer raw_key = RawKeyBuffer(base_iter->key());
+    if (raw_key.GetDbID() != dbid)
+      return;
+  }
+
   valid = true;
 }
 
